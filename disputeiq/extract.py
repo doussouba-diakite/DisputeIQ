@@ -60,14 +60,15 @@ def parse_sample(text: str) -> Report:
             consumer.report_date = parse_date(line.split(":", 1)[1]) or date.today()
         elif line.upper() in {b.upper() for b in BUREAUS}:
             bureau = line.title().replace("Transunion", "TransUnion")
-        elif bureau and line.count("|") == 7:
+        elif bureau and line.count("|") in (7, 8):
             f = [x.strip() for x in line.split("|")]
             if f[0].lower() == "creditor":
                 continue  # header row
             accounts.append(Account(
                 bureau=bureau, creditor=f[0], last4=f[1].replace("•", "").strip(), kind=f[2].lower(),
                 status=f[3], balance=money(f[4]), opened=parse_date(f[5]),
-                first_delinquency=parse_date(f[6]), original_creditor="" if f[7] in ("", "—", "-") else f[7]))
+                first_delinquency=parse_date(f[6]), original_creditor="" if f[7] in ("", "—", "-") else f[7],
+                limit=money(f[8]) if len(f) > 8 else 0.0))
     for i, a in enumerate(accounts):
         a.id = f"a{i}"
     return Report(consumer, accounts)
@@ -96,6 +97,7 @@ TOOL = {
                                                             "charge-off", "bankruptcy", "other"]},
                         "status": {"type": "string"},
                         "balance": {"type": "number"},
+                        "credit_limit": {"type": "number", "description": "Credit limit or high credit, if shown"},
                         "opened": {"type": "string", "description": "YYYY-MM or YYYY-MM-DD"},
                         "first_delinquency": {"type": "string", "description": "Date of first delinquency, if any"},
                         "original_creditor": {"type": "string"},
@@ -124,7 +126,8 @@ def extract_with_claude(text: str, api_key: str | None = None) -> Report:
     for i, a in enumerate(data.get("accounts", [])):
         accounts.append(Account(
             bureau=a["bureau"], creditor=a["creditor"], last4=str(a.get("last4", ""))[-4:], kind=a["kind"],
-            status=a.get("status", ""), balance=float(a.get("balance") or 0), opened=parse_date(a.get("opened")),
+            status=a.get("status", ""), balance=float(a.get("balance") or 0),
+            limit=float(a.get("credit_limit") or 0), opened=parse_date(a.get("opened")),
             first_delinquency=parse_date(a.get("first_delinquency")),
             original_creditor=a.get("original_creditor", ""), id=f"a{i}"))
     return Report(consumer, accounts)

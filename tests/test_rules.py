@@ -104,7 +104,7 @@ SAMPLE = Path(__file__).resolve().parent.parent / "samples" / "sample_report.pdf
 
 def test_sample_report_finds_each_planted_error():
     report = load_report(SAMPLE.read_bytes())
-    assert report.consumer.name == "Jordan Rivera" and len(report.accounts) == 17
+    assert report.consumer.name == "Jordan Rivera" and len(report.accounts) == 20
     rules = {f.rule for f in run_rules(report)}
     assert rules == {"Duplicate account", "Too old to report", "Paid but shows a balance",
                      "Balance doesn't match other bureaus", "Same debt counted twice"}

@@ -16,6 +16,7 @@ class Account:
     kind: str = "revolving"           # revolving | installment | mortgage | collection | charge-off | bankruptcy | other
     status: str = ""                  # as printed, e.g. "Paid, closed" or "Charged off"
     balance: float = 0.0
+    limit: float = 0.0                # credit limit (revolving accounts)
     opened: date | None = None
     first_delinquency: date | None = None   # FCRA reporting clock starts here (+180 days)
     original_creditor: str = ""       # for collections: who the debt came from

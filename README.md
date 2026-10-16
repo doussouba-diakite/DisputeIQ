@@ -1,14 +1,16 @@
 # DisputeIQ 🛡️
 
-**Find provable errors on your credit report and get mail-ready dispute letters, with the law cited for every item.**
+**Fix errors on your credit report, build your credit, and never miss a payment.**
+
+DisputeIQ finds provable errors and writes mail-ready dispute letters with the law cited for every item. Then it coaches you on what moves your score: utilization, payment reminders, and credit-building options picked for your report.
 
 One in five people has an error on at least one of their credit reports, and fixing it is free. But the process is confusing, so people either give up or pay "credit repair" companies for something they can do themselves. DisputeIQ walks you through it in four steps.
 
 ![Your report](docs/report.png)
 
-| Issues, each with the law behind it | Letters ready to mail |
+| Issues, each with the law behind it | Credit coach |
 | --- | --- |
-| ![Issues](docs/issues.png) | ![Letters](docs/letters.png) |
+| ![Issues](docs/issues.png) | ![Coach](docs/coach.png) |
 
 ## How it works
 
@@ -33,6 +35,14 @@ One in five people has an error on at least one of their credit reports, and fix
 3. **Approve.** The user turns each issue on or off. Nothing is disputed automatically. The bureaus can disregard disputes that look frivolous, and a person should stand behind every claim.
 4. **Mail and track.** One letter per bureau, following the [CFPB's guidance](https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_dispute-credit-report_handout_2018-11.pdf): each error described separately, with the facts, the request, and the legal basis. A checklist covers certified mail, and the tracker counts down the 30 days the bureau has to respond (FCRA § 611(a)(1)), including the 15-day extension rule.
 
+## Credit coach
+- **Score factors.** Where the report stands on each of FICO's five published factors (payment history 35%, amounts owed 30%, length of history 15%, new credit 10%, credit mix 10%), with one concrete tip each. It doesn't fake a score: the formula is proprietary.
+- **Utilization.** A gauge for total card utilization, per-card bars, and the exact dollars to pay to get under 30% and under 10%.
+- **Payment reminders.** Enter each due day and download one calendar file (`.ics`) that adds monthly reminders, 3 days early, to iPhone, Google, or Outlook. No account or server needed.
+- **Ways to build credit.** Options matched to the report (Experian Boost, Kikoff, Self, a secured card, becoming an authorized user), each with cost, why it fits, and what to watch out for. **Not sponsored**; details were checked against each company's site and are dated in the code.
+
+![Utilization and reminders](docs/coach2.png)
+
 ## Privacy by design
 - The app **never asks for a Social Security number or date of birth.** The letter has blank lines to fill in by hand.
 - Reports are processed in memory and never saved.
@@ -46,18 +56,19 @@ One in five people has an error on at least one of their credit reports, and fix
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
-pytest                                   # 22 tests: every rule, the tracker, and the sample end to end
+pytest                                   # 29 tests: every rule, the coach, the tracker, and the sample end to end
 ```
 To read real reports, add an Anthropic API key in `.streamlit/secrets.toml` (see the `.example` file) or paste it in the sidebar.
 
 ## Project structure
 ```
-app.py                 Streamlit interface: report timeline, bureau comparison, issues, letters, tracker
+app.py                 Streamlit interface: report timeline, bureau comparison, issues, letters, tracker, coach
 disputeiq/
   extract.py           PDF text (PyMuPDF) -> accounts, via Claude tool use or the sample parser
   rules.py             the rules engine, every rule cited
   letters.py           mail-ready letters (ReportLab) with verified bureau addresses
   tracker.py           FCRA § 611 deadline logic
+  coach.py             score factors, utilization, reminders (.ics), credit-building suggestions
   models.py            Account, Report, Flag
 scripts/make_sample.py builds the fictional sample report
 tests/                 pytest suite

@@ -11,31 +11,34 @@ from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 
 OUT = Path(__file__).resolve().parent.parent / "samples" / "sample_report.pdf"
-HEADER = "Creditor | Acct | Type | Status | Balance | Opened | First delinquency | Original creditor"
+HEADER = "Creditor | Acct | Type | Status | Balance | Opened | First delinquency | Original creditor | Limit"
 
 ROWS = {
     "EQUIFAX": [
-        "Hudson Federal Credit | 4421 | revolving | Open, current | $450 | 2021-03 | — | —",
-        "Dept of Education Servicing | 0091 | installment | Current | $12,400 | 2024-09 | — | —",
-        "Midtown Collections | 7781 | collection | Collection | $820 | 2018-06 | 2017-11 | Metro Card Services",
-        "City Wireless | 5502 | charge-off | Charged off | $640 | 2020-01 | 2023-02 | —",
-        "Apex Recovery Group | 9921 | collection | Collection | $640 | 2023-09 | 2023-02 | City Wireless",
-        "Brooklyn Style Card | 2290 | revolving | Paid, closed | $0 | 2019-05 | — | —",
+        "Liberty Outlet Card | 3307 | revolving | Open, current | $620 | 2025-02 | — | — | $800",
+        "Hudson Federal Credit | 4421 | revolving | Open, current | $450 | 2021-03 | — | — | $1,500",
+        "Dept of Education Servicing | 0091 | installment | Current | $12,400 | 2024-09 | — | — | —",
+        "Midtown Collections | 7781 | collection | Collection | $820 | 2018-06 | 2017-11 | Metro Card Services | —",
+        "City Wireless | 5502 | charge-off | Charged off | $640 | 2020-01 | 2023-02 | — | —",
+        "Apex Recovery Group | 9921 | collection | Collection | $640 | 2023-09 | 2023-02 | City Wireless | —",
+        "Brooklyn Style Card | 2290 | revolving | Paid, closed | $0 | 2019-05 | — | — | $1,000",
     ],
     "EXPERIAN": [
-        "Hudson Federal Credit | 4421 | revolving | Open, current | $450 | 2021-03 | — | —",
-        "Dept of Education Servicing | 0091 | installment | Current | $12,400 | 2024-09 | — | —",
-        "Apex Recovery Group | 9921 | collection | Collection | $640 | 2023-09 | 2023-02 | City Wireless",
-        "Apex Recovery Group | 9921 | collection | Collection | $640 | 2023-09 | 2023-02 | City Wireless",
-        "QuickCash Lending | 6604 | installment | Open, 60 days late | $2,300 | 2025-11 | 2026-06 | —",
-        "Brooklyn Style Card | 2290 | revolving | Paid, closed | $0 | 2019-05 | — | —",
+        "Liberty Outlet Card | 3307 | revolving | Open, current | $620 | 2025-02 | — | — | $800",
+        "Hudson Federal Credit | 4421 | revolving | Open, current | $450 | 2021-03 | — | — | $1,500",
+        "Dept of Education Servicing | 0091 | installment | Current | $12,400 | 2024-09 | — | — | —",
+        "Apex Recovery Group | 9921 | collection | Collection | $640 | 2023-09 | 2023-02 | City Wireless | —",
+        "Apex Recovery Group | 9921 | collection | Collection | $640 | 2023-09 | 2023-02 | City Wireless | —",
+        "QuickCash Lending | 6604 | installment | Open, 60 days late | $2,300 | 2025-11 | 2026-06 | — | —",
+        "Brooklyn Style Card | 2290 | revolving | Paid, closed | $0 | 2019-05 | — | — | $1,000",
     ],
     "TRANSUNION": [
-        "Hudson Federal Credit | 4421 | revolving | Open, 30 days late | $1,250 | 2021-03 | 2026-08 | —",
-        "Dept of Education Servicing | 0091 | installment | Current | $12,400 | 2024-09 | — | —",
-        "Midtown Collections | 7781 | collection | Collection | $820 | 2018-06 | 2017-11 | Metro Card Services",
-        "Northside Auto Finance | 1187 | installment | Paid, closed | $1,200 | 2020-07 | — | —",
-        "Brooklyn Style Card | 2290 | revolving | Paid, closed | $0 | 2019-05 | — | —",
+        "Liberty Outlet Card | 3307 | revolving | Open, current | $620 | 2025-02 | — | — | $800",
+        "Hudson Federal Credit | 4421 | revolving | Open, 30 days late | $1,250 | 2021-03 | 2026-08 | — | $1,500",
+        "Dept of Education Servicing | 0091 | installment | Current | $12,400 | 2024-09 | — | — | —",
+        "Midtown Collections | 7781 | collection | Collection | $820 | 2018-06 | 2017-11 | Metro Card Services | —",
+        "Northside Auto Finance | 1187 | installment | Paid, closed | $1,200 | 2020-07 | — | — | —",
+        "Brooklyn Style Card | 2290 | revolving | Paid, closed | $0 | 2019-05 | — | — | $1,000",
     ],
 }
 

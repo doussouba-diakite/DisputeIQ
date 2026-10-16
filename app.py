@@ -9,6 +9,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from disputeiq.coach import factors, pay_to_reach, reminders_ics, suggest, unique_accounts, utilization
 from disputeiq.extract import load_report
 from disputeiq.letters import ADDRESSES, build_letters_pdf
 from disputeiq.models import BUREAUS
@@ -58,7 +59,7 @@ def read_report(data: bytes, key_: str | None):
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 🛡️ DisputeIQ")
-    st.caption("Find provable errors on your credit report. Get letters you can mail today.")
+    st.caption("Fix errors on your credit report. Build your credit. Never miss a payment.")
     source = st.radio("Report", ["Try the sample report", "Upload my report (PDF)"], label_visibility="collapsed")
     data = None
     if source.startswith("Try"):
@@ -112,8 +113,8 @@ st.markdown(f"""
  <div class="stat"><b>${sum(f.account.balance for f in flags if f.request == 'delete'):,.0f}</b><span>in balances you can ask to remove</span></div>
 </div></div>""", unsafe_allow_html=True)
 
-t_report, t_issues, t_letters, t_track = st.tabs(
-    ["① Your report", f"② Issues ({len(flags)})", "③ Letters", "④ 30-day tracker"])
+t_report, t_issues, t_letters, t_track, t_coach = st.tabs(
+    ["① Your report", f"② Issues ({len(flags)})", "③ Letters", "④ 30-day tracker", "⑤ Credit coach"])
 
 # ── 1. Report ────────────────────────────────────────────────────────────────
 with t_report:
@@ -236,6 +237,86 @@ with t_track:
                 <div style="font-size:1.4rem;font-weight:700">{label}</div>
                 <div class="meter"><i style="flex:{pct};background:{EMERALD}"></i><i style="flex:{100 - pct}"></i></div>
                 <div class="muted" style="margin-top:8px">{step}</div></div>""", unsafe_allow_html=True)
+
+# ── 5. Credit coach ──────────────────────────────────────────────────────────
+GRADE = {"Good": EMERALD, "Okay": AMBER, "Needs work": RED}
+with t_coach:
+    st.markdown('<div class="step">Keep building · Your credit, factor by factor</div>', unsafe_allow_html=True)
+    st.caption("FICO scores weigh five factors (myfico.com). We can't compute your exact score, but we can show "
+               "where your report is strong and where to focus.")
+    fs = factors(report)
+    cols = st.columns(len(fs))
+    for col, f in zip(cols, fs):
+        with col:
+            st.markdown(f"""<div class="card" style="min-height:270px">
+                <div class="muted">{f.weight}% of score</div>
+                <div class="meter"><i style="flex:{f.weight};background:#38bdf8"></i><i style="flex:{100 - f.weight}"></i></div>
+                <h4 style="margin-top:10px">{f.name}</h4>
+                <div style="font-size:{'1.6rem' if len(f.value) < 8 else '1.15rem'};font-weight:700;color:{GRADE[f.grade]}">{f.value}</div>
+                <span class="pill" style="background:{GRADE[f.grade]}">{f.grade.upper()}</span>
+                <div class="muted" style="margin-top:8px">{f.detail}</div>
+                <div style="margin-top:8px;font-size:.88rem">💡 {f.tip}</div></div>""", unsafe_allow_html=True)
+
+    st.markdown("#### Credit card utilization")
+    u, per_card = utilization(report)
+    if u is None:
+        st.info("No open credit cards with a limit found. A secured card is the simplest way to start.")
+    else:
+        g1, g2 = st.columns([1, 1.4])
+        with g1:
+            gauge = go.Figure(go.Indicator(
+                mode="gauge+number", value=round(u * 100), number={"suffix": "%", "font": {"color": "#e2e8f0"}},
+                gauge={"axis": {"range": [0, 100], "tickcolor": SLATE}, "bar": {"color": "#e2e8f0", "thickness": .25},
+                       "bgcolor": "#111a2e", "borderwidth": 0,
+                       "steps": [{"range": [0, 10], "color": EMERALD}, {"range": [10, 30], "color": "#0f766e"},
+                                 {"range": [30, 50], "color": AMBER}, {"range": [50, 100], "color": RED}]}))
+            gauge.update_layout(height=250, margin=dict(l=35, r=40, t=30, b=0), paper_bgcolor="rgba(0,0,0,0)",
+                                font_color="#e2e8f0")
+            st.plotly_chart(gauge, width="stretch")
+            st.caption("Under 30% is the common guideline; under 10% is even better. When bureaus disagree, "
+                       "we use the highest balance.")
+        with g2:
+            for a, r_ in per_card:
+                color = EMERALD if r_ < .1 else "#0f766e" if r_ < .3 else AMBER if r_ < .5 else RED
+                st.markdown(f"""<div class="card"><b>{a.label()}</b>
+                    <span class="muted"> · ${a.balance:,.0f} of ${a.limit:,.0f}</span>
+                    <div class="meter"><i style="flex:{min(100, r_ * 100):.0f};background:{color}"></i>
+                    <i style="flex:{max(0, 100 - r_ * 100):.0f}"></i></div>
+                    <div class="muted" style="margin-top:6px">{r_:.0%} used · pay ${max(0, a.balance - .3 * a.limit):,.0f}
+                    to get this card under 30%</div></div>""", unsafe_allow_html=True)
+            if u >= .1:
+                st.markdown(f"**Plan:** pay **\\${pay_to_reach(report, .30):,.0f}** across your cards to get under 30% "
+                            f"overall, or **\\${pay_to_reach(report, .10):,.0f}** to get under 10%. Pay before the "
+                            "statement closing date: that's the balance that gets reported.")
+
+    st.markdown("#### Never miss a payment")
+    st.caption("Add each account's due day. Download one calendar file: it adds monthly reminders, 3 days early, to "
+               "your iPhone, Google, or Outlook calendar.")
+    payable = [a for a in unique_accounts(report) if not a.negative and a.balance > 0
+               and not any(w in a.status.lower() for w in ("closed", "paid"))]
+    plan = pd.DataFrame({"Account": [a.label() for a in payable], "Due day": [15] * len(payable),
+                         "Remind me": [True] * len(payable)})
+    plan = st.data_editor(plan, hide_index=True, width="stretch", key="due_days", disabled=["Account"],
+                          column_config={"Due day": st.column_config.NumberColumn(min_value=1, max_value=31, step=1)})
+    chosen = [(r["Account"], int(r["Due day"])) for _, r in plan.iterrows() if r["Remind me"]]
+    if chosen:
+        st.download_button(f"📅 Add {len(chosen)} payment reminder{'s' if len(chosen) != 1 else ''} to my calendar",
+                           reminders_ics(chosen), "payment_reminders.ics", "text/calendar", width="stretch")
+
+    st.markdown("#### Ways to build credit, picked for your report")
+    st.caption("Not sponsored. DisputeIQ isn't paid by any company listed. Details checked October 2026; confirm on "
+               "each site before signing up.")
+    sug = suggest(report)
+    sc = st.columns(min(3, len(sug)))
+    for i, s_ in enumerate(sug):
+        with sc[i % len(sc)]:
+            st.markdown(f"""<div class="card" style="min-height:300px"><h4>{s_.title}</h4>
+                <div class="muted">{s_.what}</div>
+                <div style="margin-top:8px"><b>Cost:</b> {s_.cost}</div>
+                <div style="margin-top:6px;color:{EMERALD}"><b>Why you:</b> {s_.why_you}</div>
+                <div style="margin-top:6px;color:{AMBER}"><b>Watch out:</b> {s_.watch_out}</div>
+                <div style="margin-top:8px"><a href="{s_.url}" target="_blank">Learn more ↗</a></div></div>""",
+                        unsafe_allow_html=True)
 
 st.markdown("---")
 st.caption("DisputeIQ by Doussouba Diakite · Rules cite the Fair Credit Reporting Act (15 U.S.C. § 1681) · "
