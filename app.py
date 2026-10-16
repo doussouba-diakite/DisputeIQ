@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from datetime import date, timedelta
+from html import escape
 from pathlib import Path
 
 import pandas as pd
@@ -14,6 +16,7 @@ from disputeiq.coach import factors, pay_to_reach, reminders_ics, suggest, uniqu
 from disputeiq.extract import load_report
 from disputeiq.letters import ADDRESSES, build_letters_pdf
 from disputeiq.models import BUREAUS
+from disputeiq.personalize import personalize
 from disputeiq.rules import GRACE, SEVEN_YEARS, TEN_YEARS, key, run_rules
 from disputeiq.tracker import Dispute
 
@@ -178,15 +181,26 @@ TOOL_LABEL = {"list_accounts": "read accounts", "list_issues": "checked rules en
 with t_ai:
     st.markdown('<div class="step">AI coach · Claude + your report + tested tools</div>', unsafe_allow_html=True)
     st.caption("Ask anything about this report. The AI doesn't guess: it calls DisputeIQ's own Python tools (the "
-               "rules engine, utilization math, FCRA deadlines) and every answer shows which tools it used.")
-    chat = st.session_state.setdefault("chat", [])        # [(role, text, tools)]
+               "rules engine, utilization math, FCRA deadlines). Every answer shows which tools it used, and a "
+               "fact-checker confirms each number and date in it came from those tools.")
+    chat = st.session_state.setdefault("chat", [])        # [(role, text, tools, (verified, unverified))]
     st.session_state.setdefault("history", [])            # raw API messages
-    for role, text_, tools in chat:
+    for role, text_, tools, check in chat:
         with st.chat_message(role, avatar="🛡️" if role == "assistant" else "🧑🏾"):
             if tools:
                 st.markdown(" ".join(f'<span class="pill" style="background:#38bdf8">🔧 {TOOL_LABEL.get(n, n)}</span>'
                                      for n, _ in tools), unsafe_allow_html=True)
             st.markdown(text_.replace("$", "\\$"))
+            if check:
+                ok, bad = check
+                if bad:
+                    st.markdown(f'<span class="pill" style="background:{AMBER}">⚠️ double-check</span>'
+                                f'<span class="muted">Not found in your report data: {", ".join(bad)}</span>',
+                                unsafe_allow_html=True)
+                elif ok:
+                    st.markdown(f'<span class="pill" style="background:{EMERALD}">✅ fact-checked</span>'
+                                f'<span class="muted">All {len(ok)} number{"s" if len(ok) != 1 else ""} and dates '
+                                f'match DisputeIQ\'s tools</span>', unsafe_allow_html=True)
     if not chat:
         cols = st.columns(3)
         for i, q in enumerate(SUGGESTED):
@@ -197,14 +211,16 @@ with t_ai:
     if not KEY:
         st.info("Add an Anthropic API key in the sidebar to chat. Everything else in DisputeIQ works without one.")
     elif question:
-        chat.append(("user", question, []))
+        chat.append(("user", question, [], None))
         with st.spinner("Thinking and checking your report…"):
             try:
                 turn, st.session_state.history = ask(question, report, st.session_state.history,
                                                      api_key=KEY, disowned=disowned)
-                chat.append(("assistant", turn.answer, turn.tools_used))
+                g = turn.grounding
+                chat.append(("assistant", turn.answer, turn.tools_used,
+                             ([c.text for c in g.verified], [c.text for c in g.unverified]) if g else None))
             except Exception as e:
-                chat.append(("assistant", f"Sorry, I couldn't reach the AI: {e}", []))
+                chat.append(("assistant", f"Sorry, I couldn't reach the AI: {e}", [], None))
         st.rerun()
     if chat and st.button("Start over", key="clear_chat"):
         st.session_state.chat, st.session_state.history = [], []
@@ -249,6 +265,39 @@ with t_letters:
                     <div style="margin-top:10px;font-size:1.6rem;font-weight:700;color:{EMERALD if mine else SLATE}">
                     {len(mine)}</div><div class="muted">item{'s' if len(mine) != 1 else ''} to dispute</div></div>""",
                             unsafe_allow_html=True)
+        st.markdown("#### ✨ Make it yours (optional)")
+        st.caption("Add what you know: when you paid, why it isn't yours, what proof you have. Claude rewrites that "
+                   "item in your own words. A fact-checker blocks any amount or date that isn't in your report or "
+                   "your note, and anything that admits a debt or threatens. If a draft fails, we keep the "
+                   "standard wording.")
+        drafts = st.session_state.setdefault("drafts", {})
+        for f in approved:
+            k = f"{f.rule}|{f.account.bureau}|{f.account.label()}"
+            with st.expander(f"{f.account.bureau} · {f.account.label()} · {f.rule}"
+                             + ("  ✨" if drafts.get(k, {}).get("used_ai") else "")):
+                st.markdown(f'<div class="muted">Standard wording: {f.reason}</div>', unsafe_allow_html=True)
+                note = st.text_area("Your details", key=f"note_{k}", height=80,
+                                    placeholder="e.g. I paid this in full in March 2024. I have the payoff letter.")
+                if st.button("✨ Personalize with AI", key=f"pz_{k}", disabled=not (KEY and note.strip())):
+                    with st.spinner("Writing and fact-checking…"):
+                        try:
+                            d = personalize(f, note, api_key=KEY)
+                            drafts[k] = {"text": d.text, "used_ai": d.used_ai, "problems": d.problems}
+                        except Exception as e:
+                            drafts[k] = {"text": f.reason, "used_ai": False, "problems": [f"couldn't reach the AI: {e}"]}
+                d = drafts.get(k)
+                if d and d["used_ai"]:
+                    st.success("✅ Passed the fact-check. This goes in your letter:")
+                    st.markdown(f"> {d['text']}".replace("$", "\\$"))
+                    if st.button("Undo", key=f"undo_{k}"):
+                        drafts.pop(k)
+                        st.rerun()
+                elif d:
+                    st.warning("Kept the standard wording. The AI draft " + "; ".join(d["problems"]) + ".")
+                if not KEY:
+                    st.caption("Add an API key in the sidebar to use this.")
+        approved = [replace(f, reason=escape(drafts[k]["text"])) if drafts.get(k, {}).get("used_ai") else f
+                    for f in approved for k in [f"{f.rule}|{f.account.bureau}|{f.account.label()}"]]
         pdf = build_letters_pdf(approved, report.consumer, date.today())
         st.download_button("⬇️ Download letters + mailing checklist (PDF)", pdf, "dispute_letters.pdf",
                            "application/pdf", type="primary", width="stretch")

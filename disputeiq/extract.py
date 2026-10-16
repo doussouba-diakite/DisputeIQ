@@ -111,22 +111,26 @@ TOOL = {
 }
 
 
-def extract_with_claude(text: str, api_key: str | None = None) -> Report:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+def extract_with_claude(text: str, api_key: str | None = None, client=None) -> Report:
+    if client is None:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
     resp = client.messages.create(
         model=MODEL, max_tokens=8000, tools=[TOOL], tool_choice={"type": "tool", "name": "record_accounts"},
         messages=[{"role": "user", "content": "Here is a credit report. Record every account.\n\n" + text[:150_000]}],
     )
-    data = next(b.input for b in resp.content if b.type == "tool_use")
+    return report_from_tool_input(next(b.input for b in resp.content if b.type == "tool_use"))
+
+
+def report_from_tool_input(data: dict) -> Report:
+    """Turn Claude's `record_accounts` call into a Report (validated, typed, last-4 only)."""
     consumer = Consumer(name=data.get("consumer_name", ""), address=data.get("consumer_address", ""),
                         report_date=parse_date(data.get("report_date")) or date.today())
     accounts = []
     for i, a in enumerate(data.get("accounts", [])):
         accounts.append(Account(
-            bureau=a["bureau"], creditor=a["creditor"], last4=str(a.get("last4", ""))[-4:], kind=a["kind"],
-            status=a.get("status", ""), balance=float(a.get("balance") or 0),
+            bureau=a["bureau"], creditor=a["creditor"], last4=re.sub(r"\W", "", str(a.get("last4", "")))[-4:],
+            kind=a["kind"], status=a.get("status", ""), balance=float(a.get("balance") or 0),
             limit=float(a.get("credit_limit") or 0), opened=parse_date(a.get("opened")),
             first_delinquency=parse_date(a.get("first_delinquency")),
             original_creditor=a.get("original_creditor", ""), id=f"a{i}"))

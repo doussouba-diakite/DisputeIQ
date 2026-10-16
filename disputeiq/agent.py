@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from . import coach, rules
+from .grounding import Grounding, today_sources, verify
 from .models import Report
 from .tracker import Dispute
 
@@ -117,6 +118,7 @@ def run_tool(name: str, args: dict, report: Report, disowned=None) -> object:
 class Turn:
     answer: str
     tools_used: list[tuple[str, dict]] = field(default_factory=list)
+    grounding: Grounding | None = None    # which numbers in the answer were found in tool results
 
 
 def ask(question: str, report: Report, history: list[dict] | None = None, client=None,
@@ -126,24 +128,25 @@ def ask(question: str, report: Report, history: list[dict] | None = None, client
         import anthropic
         client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
     messages = list(history or []) + [{"role": "user", "content": question}]
-    used = []
+    used, evidence = [], [question] + today_sources()
     for _ in range(MAX_STEPS):
         resp = client.messages.create(model=MODEL, max_tokens=1500, system=SYSTEM, tools=TOOLS, messages=list(messages))
         messages.append({"role": "assistant", "content": resp.content})
         calls = [b for b in resp.content if b.type == "tool_use"]
         if resp.stop_reason != "tool_use" or not calls:
             text = "".join(b.text for b in resp.content if b.type == "text").strip()
-            return Turn(text, used), messages
+            return Turn(text, used, verify(text, evidence)), messages
         results = []
         for c in calls:
             used.append((c.name, dict(c.input)))
             try:
                 out = run_tool(c.name, dict(c.input), report, disowned)
+                evidence.append(json.dumps(out, default=str))
                 results.append({"type": "tool_result", "tool_use_id": c.id, "content": json.dumps(out, default=str)})
             except Exception as e:  # bad arguments: tell Claude so it can fix them
                 results.append({"type": "tool_result", "tool_use_id": c.id, "is_error": True, "content": str(e)})
         messages.append({"role": "user", "content": results})
-    return Turn("I couldn't finish that in a few steps. Try asking a narrower question.", used), messages
+    return Turn("I couldn't finish that in a few steps. Try asking a narrower question.", used, Grounding()), messages
 
 
 SUGGESTED = [

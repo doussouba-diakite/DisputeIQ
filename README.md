@@ -36,6 +36,33 @@ question ─► Claude ─► tool_use ─► Python tool runs ─► tool_resul
 
 ![AI coach](docs/ai-coach.png)
 
+## Making the AI trustworthy
+An AI that's right most of the time isn't good enough for a legal letter or someone's money. DisputeIQ checks the AI's work in three ways:
+
+**1. A fact-checker on every AI answer** (`disputeiq/grounding.py`). After Claude answers, Python pulls out every dollar amount, percentage, and date and looks for each one in what the tools actually returned. The answer gets a badge: ✅ *fact-checked*, or ⚠️ *double-check* listing exactly which numbers have no source. This catches made-up numbers; it doesn't claim to prove the reasoning.
+
+**2. AI letter personalization with guardrails** (`disputeiq/personalize.py`). The user adds their own details ("I paid this in full in March 2024, I have the payoff letter") and Claude rewrites that dispute in their voice. Before it goes in the letter, the draft must pass:
+- **grounding:** no amount or date that isn't in the account record, the finding, or the user's note
+- **safety:** no admitting the debt is owed, no legal threats, nothing that looks like an SSN or full account number, sensible length
+
+If any check fails, the letter keeps the rules-engine wording and the user sees why. The AI can make a letter better; it can never make it worse.
+
+![Personalize](docs/personalize.png)
+
+**3. An evaluation harness for extraction** (`disputeiq/evals.py`, `scripts/run_evals.py`). Real reports can't go in a repo, so the harness generates synthetic tri-bureau reports with known answers and planted errors, writes them in three different layouts (a table, narrative sentences, and key/value blocks, like the three bureaus' real formats), runs Claude on each, and scores:
+
+| Metric | Why it matters |
+| --- | --- |
+| Account recall / precision | Did it find every account, and invent none? |
+| Field accuracy (7 fields) | Creditor, type, status, balance, limit, opened, first delinquency |
+| **Dispute agreement (F1)** | Does the rules engine flag the same errors on Claude's output as on the truth? An extraction mistake only matters if it changes what gets disputed. |
+
+```bash
+python scripts/run_evals.py --extractor oracle   # no API key: checks the scorer itself (100% by design)
+python scripts/run_evals.py                      # Claude: writes evals/results_claude.md, with every mistake listed
+```
+The tests prove the scorer works both ways: the answer key scores 100%, and a deliberately sloppy extractor (drops an account, misreads balances) scores lower on exactly those metrics.
+
 ## How it works
 
 ```
@@ -80,9 +107,9 @@ question ─► Claude ─► tool_use ─► Python tool runs ─► tool_resul
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
-pytest                                   # 34 tests: every rule, the agent loop, the coach, the tracker, and the sample end to end
+pytest                                   # 45 tests: every rule, the agent loop, the fact-checker, personalization guardrails, the eval scorer, the coach
 ```
-The AI features (reading real reports, the coach chat) need an Anthropic API key. Add it in `.streamlit/secrets.toml` (see the `.example` file) or paste it in the sidebar.
+The AI features (reading real reports, the coach chat, letter personalization, the eval) need an Anthropic API key. Add it in `.streamlit/secrets.toml` (see the `.example` file) or paste it in the sidebar.
 
 ## Project structure
 ```
@@ -93,9 +120,13 @@ disputeiq/
   letters.py           mail-ready letters (ReportLab) with verified bureau addresses
   tracker.py           FCRA § 611 deadline logic
   agent.py             the AI coach: Claude + 7 tools + an agent loop
+  grounding.py         fact-checker: every number in an AI answer must come from a tool
+  personalize.py       AI letter rewriting, with grounding and safety checks
+  evals.py             synthetic reports in 3 layouts + extraction scoring
   coach.py             score factors, utilization, reminders (.ics), credit-building suggestions
   models.py            Account, Report, Flag
 scripts/make_sample.py builds the fictional sample report
+scripts/run_evals.py   runs the extraction eval
 tests/                 pytest suite
 ```
 
