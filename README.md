@@ -12,6 +12,30 @@ One in five people has an error on at least one of their credit reports, and fix
 | --- | --- |
 | ![Issues](docs/issues.png) | ![Coach](docs/coach.png) |
 
+## The AI: Claude as an agent with tools
+DisputeIQ uses Claude in two places, both through **tool use**:
+
+1. **Reading the report.** Claude turns any credit report PDF into structured accounts by calling a `record_accounts` tool (`disputeiq/extract.py`).
+2. **The AI coach chat** (`disputeiq/agent.py`). The user asks questions like *"What's hurting my credit most?"* or *"When does this collection have to come off?"* Claude answers by calling DisputeIQ's own Python tools in a loop:
+
+```
+question ─► Claude ─► tool_use ─► Python tool runs ─► tool_result ─► Claude ─► … ─► answer
+```
+
+| Tool | What it returns |
+| --- | --- |
+| `list_accounts` | every account, optionally for one bureau |
+| `list_issues` | errors found by the rules engine, with the law cited |
+| `score_factors` | the five FICO factors, graded |
+| `payoff_plan` | utilization and dollars to pay to reach a target |
+| `removal_date` | when a negative item legally has to come off (FCRA § 605) |
+| `dispute_deadline` | the bureau's investigation deadline (FCRA § 611) |
+| `credit_builders` | credit-building options matched to the report |
+
+**Why this design:** the model is good at language; the tools are good at facts. Claude never does math or legal judgment from memory. Every number it says comes from a tested function, and the app shows which tools each answer used, so a person can check it. The loop is capped at 6 steps, bad tool arguments go back to Claude as errors instead of crashing, and the system prompt forbids inventing numbers, asking for an SSN, or suggesting paid credit repair. The loop is tested with a fake Claude client (`tests/test_agent.py`), so the tests run without an API key.
+
+![AI coach](docs/ai-coach.png)
+
 ## How it works
 
 ```
@@ -56,9 +80,9 @@ One in five people has an error on at least one of their credit reports, and fix
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
-pytest                                   # 29 tests: every rule, the coach, the tracker, and the sample end to end
+pytest                                   # 34 tests: every rule, the agent loop, the coach, the tracker, and the sample end to end
 ```
-To read real reports, add an Anthropic API key in `.streamlit/secrets.toml` (see the `.example` file) or paste it in the sidebar.
+The AI features (reading real reports, the coach chat) need an Anthropic API key. Add it in `.streamlit/secrets.toml` (see the `.example` file) or paste it in the sidebar.
 
 ## Project structure
 ```
@@ -68,6 +92,7 @@ disputeiq/
   rules.py             the rules engine, every rule cited
   letters.py           mail-ready letters (ReportLab) with verified bureau addresses
   tracker.py           FCRA § 611 deadline logic
+  agent.py             the AI coach: Claude + 7 tools + an agent loop
   coach.py             score factors, utilization, reminders (.ics), credit-building suggestions
   models.py            Account, Report, Flag
 scripts/make_sample.py builds the fictional sample report

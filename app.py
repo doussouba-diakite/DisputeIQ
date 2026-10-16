@@ -9,6 +9,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from disputeiq.agent import SUGGESTED, ask
 from disputeiq.coach import factors, pay_to_reach, reminders_ics, suggest, unique_accounts, utilization
 from disputeiq.extract import load_report
 from disputeiq.letters import ADDRESSES, build_letters_pdf
@@ -68,13 +69,17 @@ with st.sidebar:
     else:
         up = st.file_uploader("Credit report PDF", type="pdf",
                               help="Get yours free at annualcreditreport.com")
-        user_key = st.text_input("Anthropic API key", type="password",
-                                 help="Used once to read your report. Not stored.") if not api_key() else None
         if up:
             data = up.read()
         st.caption("🔒 Your report is processed in memory and never saved. Never upload someone else's report.")
+    if not api_key():
+        st.markdown("---")
+        st.text_input("✨ Anthropic API key (for AI features)", type="password", key="user_key",
+                      help="Powers reading real reports and the AI coach. Used for this session only, never stored.")
     st.markdown("---")
     st.caption("Not legal advice. Disputing is free; you never need to pay anyone to do it.")
+
+KEY = api_key() or st.session_state.get("user_key") or None
 
 if not data:
     st.markdown('<div class="hero"><h1>Dispute<span>IQ</span></h1><p>Upload a credit report from '
@@ -83,7 +88,7 @@ if not data:
 
 try:
     with st.spinner("Reading your report…"):
-        report = read_report(data, api_key() or (locals().get("user_key") or None))
+        report = read_report(data, KEY)
 except Exception as e:  # missing key, bad PDF, API error
     st.error(f"Couldn't read that report: {e}")
     st.stop()
@@ -113,8 +118,9 @@ st.markdown(f"""
  <div class="stat"><b>${sum(f.account.balance for f in flags if f.request == 'delete'):,.0f}</b><span>in balances you can ask to remove</span></div>
 </div></div>""", unsafe_allow_html=True)
 
-t_report, t_issues, t_letters, t_track, t_coach = st.tabs(
-    ["① Your report", f"② Issues ({len(flags)})", "③ Letters", "④ 30-day tracker", "⑤ Credit coach"])
+t_report, t_ai, t_issues, t_letters, t_track, t_coach = st.tabs(
+    ["① Your report", "✨ Ask the AI coach", f"② Issues ({len(flags)})", "③ Letters", "④ 30-day tracker",
+     "⑤ Credit coach"])
 
 # ── 1. Report ────────────────────────────────────────────────────────────────
 with t_report:
@@ -164,6 +170,45 @@ with t_report:
     st.markdown("#### Any accounts you don't recognize?")
     st.multiselect("Mark accounts you never opened. We'll add them to your disputes.",
                    options=[a.id for a in accounts], format_func=lambda i: labels[i], key="disowned")
+
+# ── AI coach (Claude + tools) ────────────────────────────────────────────────
+TOOL_LABEL = {"list_accounts": "read accounts", "list_issues": "checked rules engine", "score_factors": "score factors",
+              "payoff_plan": "utilization math", "removal_date": "7-year rule", "dispute_deadline": "§ 611 deadline",
+              "credit_builders": "credit-builder options"}
+with t_ai:
+    st.markdown('<div class="step">AI coach · Claude + your report + tested tools</div>', unsafe_allow_html=True)
+    st.caption("Ask anything about this report. The AI doesn't guess: it calls DisputeIQ's own Python tools (the "
+               "rules engine, utilization math, FCRA deadlines) and every answer shows which tools it used.")
+    chat = st.session_state.setdefault("chat", [])        # [(role, text, tools)]
+    st.session_state.setdefault("history", [])            # raw API messages
+    for role, text_, tools in chat:
+        with st.chat_message(role, avatar="🛡️" if role == "assistant" else "🧑🏾"):
+            if tools:
+                st.markdown(" ".join(f'<span class="pill" style="background:#38bdf8">🔧 {TOOL_LABEL.get(n, n)}</span>'
+                                     for n, _ in tools), unsafe_allow_html=True)
+            st.markdown(text_.replace("$", "\\$"))
+    if not chat:
+        cols = st.columns(3)
+        for i, q in enumerate(SUGGESTED):
+            if cols[i % 3].button(q, key=f"sq_{i}", width="stretch"):
+                st.session_state.pending = q
+                st.rerun()
+    question = st.chat_input("Ask about your credit…", disabled=not KEY) or st.session_state.pop("pending", None)
+    if not KEY:
+        st.info("Add an Anthropic API key in the sidebar to chat. Everything else in DisputeIQ works without one.")
+    elif question:
+        chat.append(("user", question, []))
+        with st.spinner("Thinking and checking your report…"):
+            try:
+                turn, st.session_state.history = ask(question, report, st.session_state.history,
+                                                     api_key=KEY, disowned=disowned)
+                chat.append(("assistant", turn.answer, turn.tools_used))
+            except Exception as e:
+                chat.append(("assistant", f"Sorry, I couldn't reach the AI: {e}", []))
+        st.rerun()
+    if chat and st.button("Start over", key="clear_chat"):
+        st.session_state.chat, st.session_state.history = [], []
+        st.rerun()
 
 # ── 2. Issues ────────────────────────────────────────────────────────────────
 with t_issues:
