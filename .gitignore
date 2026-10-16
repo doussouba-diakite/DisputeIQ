@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.DS_Store
+.streamlit/secrets.toml
+# never commit real credit reports
+*.pdf
+!samples/sample_report.pdf
